@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SmartCart</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Telugu:wght@400;600&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f5f6f1;--ink:#1c2a22;--mut:#5d6b63;--line:#d9ded4;--card:#fff;--ac:#2a7a4b;--warn:#b4531a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 Inter,'Noto Sans Telugu',system-ui,sans-serif;padding-bottom:40px}
+header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--ac);color:#fff}
+header b{font-size:18px} header small{opacity:.85;display:block}
+button{font:inherit;cursor:pointer;border:1px solid var(--ac);background:var(--ac);color:#fff;border-radius:8px;padding:9px 14px}
+button.alt{background:#fff;color:var(--ac)} button:focus-visible,input:focus-visible{outline:3px solid #f0b429}
+main{max-width:640px;margin:0 auto;padding:12px}
+.tabs{display:flex;gap:8px;margin-bottom:10px}.tabs button{flex:1}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:12px}
+input{font:inherit;width:100%;padding:10px;border:1px solid var(--line);border-radius:8px}
+.row{display:flex;gap:8px}
+#reader{width:100%}
+.res{padding:10px 0;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:8px;align-items:center}
+h2{font-size:17px;margin:0 0 8px}
+.pname{font-size:20px;font-weight:600;margin:0}.mut{color:var(--mut);font-size:14px}
+.pimg{width:96px;height:96px;object-fit:contain;border:1px solid var(--line);border-radius:8px;background:#fff}
+.grades{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0}
+.g{border:1px solid var(--line);border-radius:8px;padding:8px 12px;min-width:120px}
+.g b{font-size:22px;display:block}
+.allergen{border-left:4px solid var(--warn);padding:6px 10px;background:#fff6ee}
+table{width:100%;border-collapse:collapse;font-size:15px}td{padding:4px 0;border-bottom:1px solid var(--line)}td:last-child{text-align:right}
+.total{font-size:20px;font-weight:600;display:flex;justify-content:space-between;margin-top:10px}
+.qty{display:flex;align-items:center;gap:8px}.qty button{padding:2px 10px}
+#toast{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:9px 14px;border-radius:8px;display:none;max-width:90%}
+</style>
+</head>
+<body>
+<header>
+  <div><b>SmartCart</b><small id="meta"></small></div>
+  <button class="alt" id="langBtn" aria-label="Language"></button>
+</header>
+<main>
+  <div class="tabs">
+    <button id="tCam" data-i="scan"></button>
+    <button class="alt" id="tNum" data-i="type"></button>
+    <button class="alt" id="tSea" data-i="search"></button>
+  </div>
+  <section class="panel" id="pCam" hidden><div id="reader"></div></section>
+  <section class="panel" id="pNum" hidden>
+    <div class="row"><input id="numIn" inputmode="numeric" placeholder="8901234567890"><button id="numGo" data-i="find"></button></div>
+  </section>
+  <section class="panel" id="pSea" hidden>
+    <input id="seaIn" data-ph="searchPh"><div id="seaRes"></div>
+  </section>
+
+  <section class="panel" id="product"><p class="mut" data-i="empty"></p></section>
+
+  <section class="panel">
+    <h2 data-i="cart"></h2>
+    <div id="cartList"></div>
+    <div class="total"><span data-i="total"></span><span id="total">₹0</span></div>
+    <button style="width:100%;margin-top:10px" id="checkout" data-i="checkout"></button>
+  </section>
+  <section class="panel" id="bill" hidden></section>
+  <p class="mut">Product data: <a href="https://world.openfoodfacts.org">Open Food Facts</a> (ODbL) and manual entry.</p>
+</main>
+<div id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script>
+// ===== CONFIG: fill these in =====
+const SUPABASE_URL = 'https://YOURPROJECT.supabase.co';
+const SUPABASE_KEY = 'YOUR_ANON_KEY';
+const STORE_ID = 'S1';
+// =================================
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const cartId = new URLSearchParams(location.search).get('cart') || 'CART01';
+let lang = localStorage.lang || 'en';
+let cart = JSON.parse(localStorage['cart_' + cartId] || '[]');
+let current = null;
+
+const T = {
+ en:{scan:'Camera',type:'Type number',search:'Search',find:'Find',empty:'Scan a product with the cart scanner or use the buttons above.',cart:'Your cart',total:'Total',checkout:'Checkout',
+  ingredients:'Ingredients',nutrition:'Nutrition per 100 g / 100 ml',allergens:'Allergens',nutri:'Nutrition grade',nova:'Processing (NOVA)',na:'Not available',
+  calc:'calculated',scanNova:'from ingredients',price:'Price',mrp:'MRP',qty:'Net quantity',loc:'Location',notFound:'Product not found. Check the number or search by name.',
+  searchPh:'Search by name or brand',noPrice:'Price not set',added:'Added to cart',remove:'Remove',bill:'Final bill',done:'Done',src:'Source',unverified:'Not verified',verified:'Verified',
+  none:'None listed',empty2:'Cart is empty',camErr:'Camera not available. Allow camera access (HTTPS needed).',approx:'approx.',
+  energy_kcal:'Energy (kcal)',fat:'Fat (g)',sat_fat:'Saturated fat (g)',carbs:'Carbohydrates (g)',sugars:'Sugars (g)',fibre:'Fibre (g)',protein:'Protein (g)',salt:'Salt (g)'},
+ te:{scan:'కెమెరా',type:'నంబర్',search:'వెతకండి',find:'వెతుకు',empty:'కార్ట్ స్కానర్‌తో ఉత్పత్తిని స్కాన్ చేయండి లేదా పై బటన్లను వాడండి.',cart:'మీ కార్ట్',total:'మొత్తం',checkout:'చెక్అవుట్',
+  ingredients:'పదార్థాలు',nutrition:'100 గ్రా / 100 మి.లీ కు పోషకాలు',allergens:'అలెర్జీ కారకాలు',nutri:'పోషక గ్రేడ్',nova:'ప్రాసెసింగ్ (NOVA)',na:'అందుబాటులో లేదు',
+  calc:'లెక్కించినది',scanNova:'పదార్థాల నుండి',price:'ధర',mrp:'MRP',qty:'నికర పరిమాణం',loc:'స్థానం',notFound:'ఉత్పత్తి దొరకలేదు. నంబర్ చూడండి లేదా పేరుతో వెతకండి.',
+  searchPh:'పేరు లేదా బ్రాండ్‌తో వెతకండి',noPrice:'ధర లేదు',added:'కార్ట్‌లో చేర్చబడింది',remove:'తొలగించు',bill:'తుది బిల్లు',done:'పూర్తి',src:'మూలం',unverified:'ధృవీకరించలేదు',verified:'ధృవీకరించబడింది',
+  none:'ఏమీ లేదు',empty2:'కార్ట్ ఖాళీగా ఉంది',camErr:'కెమెరా అందుబాటులో లేదు. కెమెరా అనుమతి ఇవ్వండి.',approx:'సుమారు',
+  energy_kcal:'శక్తి (kcal)',fat:'కొవ్వు (గ్రా)',sat_fat:'సంతృప్త కొవ్వు (గ్రా)',carbs:'కార్బోహైడ్రేట్లు (గ్రా)',sugars:'చక్కెరలు (గ్రా)',fibre:'పీచు (గ్రా)',protein:'ప్రోటీన్ (గ్రా)',salt:'ఉప్పు (గ్రా)'}
+};
+const t = k => (T[lang][k] ?? T.en[k] ?? k);
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function toast(m){const e=$('toast');e.textContent=m;e.style.display='block';clearTimeout(toast.t);toast.t=setTimeout(()=>e.style.display='none',2500)}
+
+// ===== Grading: Nutri-Score (2017 general-food algorithm) and NOVA markers =====
+function pts(v, th){let p=0;for(const x of th){if(v>x)p++;else break}return p}
+function nutriScore(p){
+  const n = p.nutrients || {};
+  if (p.category === 'beverage') return null;           // beverage rules not implemented
+  const kcal=n.energy_kcal, sug=n.sugars, sat=n.sat_fat, pro=n.protein;
+  const salt = n.salt ?? (n.sodium_mg!=null ? n.sodium_mg/400 : null);
+  if ([kcal,sug,sat,pro,salt].some(v => v==null || isNaN(v))) return null;   // required inputs missing
+  const kj = kcal*4.184, sodium = salt*400;
+  const N = pts(kj,[335,670,1005,1340,1675,2010,2345,2680,3015,3350]) + pts(sug,[4.5,9,13.5,18,22.5,27,31,36,40,45])
+          + pts(sat,[1,2,3,4,5,6,7,8,9,10]) + pts(sodium,[90,180,270,360,450,540,630,720,810,900]);
+  const approx = n.fibre==null || n.fvl_pct==null;       // missing fibre / fruit-veg share counted as 0
+  const fib = pts(n.fibre ?? 0,[0.9,1.9,2.8,3.7,4.7]);
+  const fv = (n.fvl_pct ?? 0) > 80 ? 5 : (n.fvl_pct ?? 0) > 60 ? 2 : (n.fvl_pct ?? 0) > 40 ? 1 : 0;
+  const prot = pts(pro,[1.6,3.2,4.8,6.4,8]);
+  const P = (N >= 11 && fv < 5) ? fib + fv : fib + fv + prot;
+  const s = N - P;
+  return {grade: s<=-1?'a':s<=2?'b':s<=10?'c':s<=18?'d':'e', approx};
+}
+const NOVA4 = /(flavou?r(ing)?s?\b|flavour enhancer|colou?r|emulsifier|sweetener|thickener|stabili[sz]er|\bins\s?\d{3}|\be\d{3}\b|hydrogenated|interesterified|maltodextrin|modified starch|isolate|hydrolys|glucose syrup|fructose syrup|invert syrup|dextrose|anti-?caking|humectant|acidity regulator|raising agent|preservative)/i;
+function novaFromIngredients(txt){ return txt && NOVA4.test(txt) ? 4 : null; }
+
+// ===== Product lookup =====
+async function fromOFF(code){
+  try{
+    const r = await fetch(`https://world.openfoodfacts.org/api/v2/product/${code}.json?fields=product_name,brands,image_url,quantity,ingredients_text,nutriments,allergens_tags,nutriscore_grade,nova_group`);
+    const j = await r.json(); if (j.status !== 1) return null;
+    const p = j.product, m = p.nutriments || {};
+    const num = v => (v==null||v==='') ? undefined : Number(v);
+    const nutrients = Object.fromEntries(Object.entries({
+      energy_kcal:num(m['energy-kcal_100g']), fat:num(m.fat_100g), sat_fat:num(m['saturated-fat_100g']), carbs:num(m.carbohydrates_100g),
+      sugars:num(m.sugars_100g), fibre:num(m.fiber_100g), protein:num(m.proteins_100g), salt:num(m.salt_100g),
+      fvl_pct:num(m['fruits-vegetables-legumes-estimate-from-ingredients_100g'] ?? m['fruits-vegetables-nuts-estimate-from-ingredients_100g'])
+    }).filter(([,v]) => v!==undefined && !isNaN(v)));
+    return { barcode:code, name:p.product_name || code, brand:p.brands || null, image_url:p.image_url || null, quantity:p.quantity || null,
+      ingredients:p.ingredients_text || null, allergens:(p.allergens_tags||[]).map(a=>a.replace(/^en:/,'')).join(', ') || null, nutrients,
+      nutriscore:'abcde'.includes(p.nutriscore_grade) && p.nutriscore_grade?.length===1 ? p.nutriscore_grade : null,
+      nova:[1,2,3,4].includes(Number(p.nova_group)) ? Number(p.nova_group) : null, source:'off', verified:false };
+  }catch(e){ return null }
+}
+
+async function handleBarcode(raw){
+  const code = String(raw).replace(/\D/g,'');
+  if (code.length < 8) return toast(t('notFound'));
+  let {data:p} = await sb.from('products').select('*').eq('barcode',code).maybeSingle();
+  if (!p){
+    p = await fromOFF(code);
+    if (p) await sb.from('products').upsert(p,{onConflict:'barcode',ignoreDuplicates:true});
+  }
+  if (!p) { $('product').innerHTML = `<p>${esc(t('notFound'))}</p><p class="mut">${esc(code)}</p>`; return; }
+  const {data:sp} = await sb.from('store_products').select('*').eq('store_id',STORE_ID).eq('barcode',code).maybeSingle();
+  current = {p, sp}; renderProduct(); addToCart(p, sp);
+}
+
+function renderProduct(){
+  if(!current) return;
+  const {p, sp} = current, n = p.nutrients || {};
+  const ns = p.nutriscore ? {grade:p.nutriscore, tag:'Open Food Facts'} : (()=>{const c=nutriScore(p);return c?{grade:c.grade,tag:t('calc')+(c.approx?', '+t('approx'):'')}:null})();
+  const nv = p.nova ? {v:p.nova, tag:p.source==='off'?'Open Food Facts':t('src')+': manual'} : (()=>{const v=novaFromIngredients(p.ingredients);return v?{v,tag:t('scanNova')}:null})();
+  const rows = ['energy_kcal','fat','sat_fat','carbs','sugars','fibre','protein','salt'].map(k=>`<tr><td>${t(k)}</td><td>${n[k]!=null?esc(n[k]):'–'}</td></tr>`).join('');
+  $('product').innerHTML = `
+   <div class="row" style="align-items:flex-start">
+     ${p.image_url?`<img class="pimg" src="${esc(p.image_url)}" alt="">`:''}
+     <div><p class="pname">${esc(p.name)}</p><div class="mut">${esc(p.brand||'')} ${p.quantity?'· '+esc(p.quantity):''}</div>
+     <div style="margin-top:6px">${sp&&sp.price!=null?`<b>₹${sp.price}</b>${sp.mrp?` <span class="mut">${t('mrp')} ₹${sp.mrp}</span>`:''}`:`<span class="mut">${t('noPrice')}</span>`}</div>
+     ${sp&&(sp.aisle||sp.shelf)?`<div class="mut">${t('loc')}: ${esc(sp.aisle||'')} ${esc(sp.shelf||'')}</div>`:''}</div>
+   </div>
+   <div class="grades">
+     <div class="g"><span class="mut">${t('nutri')}</span><b>${ns?ns.grade.toUpperCase():t('na')}</b><span class="mut">${ns?esc(ns.tag):''}</span></div>
+     <div class="g"><span class="mut">${t('nova')}</span><b>${nv?nv.v:t('na')}</b><span class="mut">${nv?esc(nv.tag):''}</span></div>
+   </div>
+   <div class="allergen"><b>${t('allergens')}:</b> ${esc(p.allergens||t('none'))}</div>
+   <h2 style="margin-top:12px">${t('nutrition')}</h2><table>${rows}</table>
+   <h2 style="margin-top:12px">${t('ingredients')}</h2><p>${esc(p.ingredients||t('na'))}</p>
+   <p class="mut">${t('src')}: ${esc(p.source)} · ${p.verified?t('verified'):t('unverified')}</p>`;
+}
+
+// ===== Cart =====
+function saveCart(){ localStorage['cart_'+cartId] = JSON.stringify(cart); renderCart(); }
+function addToCart(p, sp){
+  const i = cart.find(x=>x.barcode===p.barcode);
+  if (i) i.qty++; else cart.push({barcode:p.barcode, name:p.name, price:sp&&sp.price!=null?Number(sp.price):null, qty:1});
+  saveCart(); toast(t('added'));
+}
+function renderCart(){
+  $('cartList').innerHTML = cart.length ? cart.map((x,i)=>`<div class="res"><div><div>${esc(x.name)}</div><div class="mut">${x.price!=null?'₹'+x.price:t('noPrice')}</div></div>
+    <div class="qty"><button class="alt" data-q="${i}" data-d="-1" aria-label="-">−</button>${x.qty}<button class="alt" data-q="${i}" data-d="1" aria-label="+">+</button></div></div>`).join('') : `<p class="mut">${t('empty2')}</p>`;
+  $('total').textContent = '₹' + cart.reduce((s,x)=>s+(x.price||0)*x.qty,0).toFixed(2);
+}
+$('cartList').onclick = e => { const b=e.target.closest('button[data-q]'); if(!b) return;
+  const i=+b.dataset.q; cart[i].qty += +b.dataset.d; if(cart[i].qty<=0) cart.splice(i,1); saveCart(); };
+$('checkout').onclick = () => {
+  const tot = cart.reduce((s,x)=>s+(x.price||0)*x.qty,0).toFixed(2);
+  $('bill').hidden = false;
+  $('bill').innerHTML = `<h2>${t('bill')}</h2><table>${cart.map(x=>`<tr><td>${esc(x.name)} × ${x.qty}</td><td>${x.price!=null?'₹'+(x.price*x.qty).toFixed(2):'–'}</td></tr>`).join('')}</table>
+    <div class="total"><span>${t('total')}</span><span>₹${tot}</span></div><button style="width:100%;margin-top:10px" id="done">${t('done')}</button>`;
+  $('done').onclick = () => { cart=[]; saveCart(); $('bill').hidden=true; };
+};
+
+// ===== Input methods =====
+let scanner=null, lastCam='', lastCamT=0;
+async function toggleCam(){
+  if (scanner){ try{await scanner.stop()}catch(e){} scanner=null; $('pCam').hidden=true; return; }
+  $('pCam').hidden=false;
+  try{
+    scanner = new Html5Qrcode('reader');
+    await scanner.start({facingMode:'environment'},{fps:10,qrbox:{width:260,height:120}}, c=>{
+      if (c!==lastCam || Date.now()-lastCamT>3000){ lastCam=c; lastCamT=Date.now(); handleBarcode(c); }
+    });
+  }catch(e){ scanner=null; $('pCam').hidden=true; toast(t('camErr')); }
+}
+$('tCam').onclick = toggleCam;
+$('tNum').onclick = () => { $('pNum').hidden = !$('pNum').hidden; $('pSea').hidden = true; };
+$('tSea').onclick = () => { $('pSea').hidden = !$('pSea').hidden; $('pNum').hidden = true; };
+$('numGo').onclick = () => handleBarcode($('numIn').value);
+$('numIn').onkeydown = e => { if(e.key==='Enter') handleBarcode($('numIn').value) };
+let seaT;
+$('seaIn').oninput = () => { clearTimeout(seaT); seaT = setTimeout(async()=>{
+  const q = $('seaIn').value.replace(/[,()%*]/g,' ').trim(); if(q.length<2){ $('seaRes').innerHTML=''; return; }
+  const {data} = await sb.from('products').select('barcode,name,brand').or(`name.ilike.%${q}%,brand.ilike.%${q}%`).limit(8);
+  $('seaRes').innerHTML = (data||[]).map(r=>`<div class="res"><div>${esc(r.name)}<div class="mut">${esc(r.brand||'')}</div></div><button data-b="${esc(r.barcode)}">+</button></div>`).join('') || `<p class="mut">${t('notFound')}</p>`;
+}, 300); };
+$('seaRes').onclick = e => { const b=e.target.closest('button[data-b]'); if(b) handleBarcode(b.dataset.b); };
+
+// ===== Realtime scans from the ESP32 =====
+sb.channel('scans-'+cartId).on('postgres_changes',{event:'INSERT',schema:'public',table:'scans',filter:`cart_id=eq.${cartId}`},
+  payload => handleBarcode(payload.new.barcode)).subscribe();
+
+// ===== Language =====
+function applyLang(){
+  document.documentElement.lang = lang; localStorage.lang = lang;
+  document.querySelectorAll('[data-i]').forEach(e=>e.textContent=t(e.dataset.i));
+  document.querySelectorAll('[data-ph]').forEach(e=>e.placeholder=t(e.dataset.ph));
+  $('langBtn').textContent = lang==='en' ? 'తెలుగు' : 'English';
+  $('meta').textContent = `Cart ${cartId} · Store ${STORE_ID}`;
+  if (!current) $('product').innerHTML = `<p class="mut">${t('empty')}</p>`; else renderProduct();
+  renderCart();
+}
+$('langBtn').onclick = () => { lang = lang==='en' ? 'te' : 'en'; applyLang(); };
+applyLang();
+</script>
+</body>
+</html>
